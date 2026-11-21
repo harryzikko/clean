@@ -1,0 +1,27 @@
+name: CleanSpace
+options:
+  bundleIdPrefix: com.cleanspace
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  CleanSpace:
+    type: application
+    platform: iOS
+    sources:
+      - path: CleanSpace/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cleanspace.app
+        INFOPLIST_FILE: CleanSpace/Resources/Info.plist
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
