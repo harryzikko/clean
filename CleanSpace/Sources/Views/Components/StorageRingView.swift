@@ -20,52 +20,72 @@ public struct StorageRingView: View {
     
     public var body: some View {
         ZStack {
-            // Background track
+            // Background track with glassmorphism
             Circle()
-                .stroke(Color.gray.opacity(0.18), lineWidth: 18)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 20)
             
-            // Progress gradient
+            // Soft glow behind progress
             Circle()
                 .trim(from: 0.0, to: CGFloat(usedPercentage))
                 .stroke(
-                    AngularGradient(
-                        gradient: Gradient(colors: [Color.blue, Color.cyan, Color.indigo]),
-                        center: .center,
-                        startAngle: .degrees(-90),
-                        endAngle: .degrees(270)
+                    LinearGradient(
+                        colors: [Color.blue, Color.cyan, Color.purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(lineWidth: 20, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .blur(radius: 8)
+                .opacity(0.35)
+            
+            // Foreground progress ring
+            Circle()
+                .trim(from: 0.0, to: CGFloat(usedPercentage))
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.blue, Color.cyan, Color.indigo],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     ),
                     style: StrokeStyle(lineWidth: 18, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .animation(.spring(response: 1.0, dampingFraction: 0.8), value: usedPercentage)
+                .animation(.spring(response: 0.8, dampingFraction: 0.7), value: usedPercentage)
             
-            // Center info
-            VStack(spacing: 4) {
+            // Inner stats container
+            VStack(spacing: 5) {
                 Text(String(format: "%.0f%%", usedPercentage * 100))
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .font(.system(size: 46, weight: .heavy, design: .rounded))
                     .foregroundColor(.primary)
                 
                 Text("\(usedText) / \(totalText)")
-                    .font(.footnote)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
                     .foregroundColor(.secondary)
                 
                 if let cleanable = cleanableText, !cleanable.isEmpty {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Image(systemName: "sparkles")
-                            .font(.caption2)
-                        Text("Có thể dọn \(cleanable)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Dọn được \(cleanable)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.15))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(Color.green.opacity(0.16))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                            )
+                    )
                     .foregroundColor(.green)
-                    .cornerRadius(12)
                     .padding(.top, 4)
                 }
             }
         }
-        .frame(width: 220, height: 220)
+        .frame(width: 230, height: 230)
     }
 }

@@ -8,9 +8,9 @@ public struct ScreenshotsCleanView: View {
     @State private var alertMessage = ""
     
     private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
+        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 6)
     ]
     
     public init(viewModel: DashboardViewModel) {
@@ -27,77 +27,90 @@ public struct ScreenshotsCleanView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            // Header Bar
+            // Header stats
             HStack {
                 Text("\(viewModel.screenshots.count) ảnh chụp màn hình")
                     .font(.subheadline)
+                    .fontWeight(.medium)
                     .foregroundColor(.secondary)
                 
                 Spacer()
                 
-                Button(selectedCount == viewModel.screenshots.count ? "Bỏ chọn tất cả" : "Chọn tất cả") {
+                Button {
+                    HapticManager.shared.selection()
                     let selectAll = (selectedCount != viewModel.screenshots.count)
                     for index in viewModel.screenshots.indices {
                         viewModel.screenshots[index].isSelectedForDeletion = selectAll
                     }
+                } label: {
+                    Text(selectedCount == viewModel.screenshots.count ? "Bỏ chọn tất cả" : "Chọn tất cả")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
                 }
-                .font(.subheadline)
-                .foregroundColor(.blue)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             
             if viewModel.screenshots.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 64))
-                        .foregroundColor(.blue)
+                    ZStack {
+                        Circle()
+                            .fill(Color.purple.opacity(0.12))
+                            .frame(width: 90, height: 90)
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 48))
+                            .foregroundColor(.purple)
+                    }
                     Text("Không có ảnh chụp màn hình nào")
-                        .font(.headline)
+                        .font(.title3)
+                        .fontWeight(.bold)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 8) {
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(columns: columns, spacing: 6) {
                         ForEach($viewModel.screenshots) { $item in
                             ZStack(alignment: .topTrailing) {
-                                ThumbnailView(asset: item.asset, targetSize: CGSize(width: 200, height: 200))
+                                ThumbnailView(asset: item.asset, targetSize: CGSize(width: 250, height: 250))
                                     .aspectRatio(1, contentMode: .fill)
                                     .cornerRadius(10)
                                     .clipped()
                                     .contentShape(Rectangle())
                                     .onTapGesture {
+                                        HapticManager.shared.selection()
                                         item.isSelectedForDeletion.toggle()
                                     }
                                 
                                 Button {
+                                    HapticManager.shared.selection()
                                     item.isSelectedForDeletion.toggle()
                                 } label: {
                                     Image(systemName: item.isSelectedForDeletion ? "checkmark.circle.fill" : "circle")
-                                        .font(.title3)
+                                        .font(.system(size: 20))
                                         .foregroundColor(item.isSelectedForDeletion ? .red : .white)
-                                        .background(Circle().fill(Color.black.opacity(0.3)))
+                                        .background(Circle().fill(Color.black.opacity(0.35)))
                                 }
                                 .padding(6)
                             }
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 80)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 100)
                 }
             }
             
             // Bottom Action Bar
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 Divider()
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Đã chọn: \(selectedCount) ảnh")
+                        Text("Đã chọn \(selectedCount) ảnh")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Text(ByteCountFormatter.string(fromByteCount: selectedBytes, countStyle: .file))
-                            .font(.headline)
-                            .foregroundColor(.blue)
+                            .font(.system(size: 18, weight: .heavy, design: .rounded))
+                            .foregroundColor(.red)
                     }
                     
                     Spacer()
@@ -105,27 +118,27 @@ public struct ScreenshotsCleanView: View {
                     Button {
                         deleteScreenshots()
                     } label: {
-                        HStack {
+                        HStack(spacing: 6) {
                             if isDeleting {
                                 ProgressView().tint(.white)
                             } else {
                                 Image(systemName: "trash.fill")
-                                Text("Xóa ảnh chụp màn hình")
+                                Text("Xóa ảnh đã chọn")
                             }
                         }
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 20)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 22)
                         .padding(.vertical, 14)
-                        .background(selectedCount > 0 ? Color.red : Color.gray.opacity(0.5))
+                        .background(selectedCount > 0 ? Color.red : Color.gray.opacity(0.4))
                         .foregroundColor(.white)
                         .cornerRadius(14)
                     }
                     .disabled(isDeleting || selectedCount == 0)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
             }
-            .background(.ultraThinMaterial)
         }
         .navigationTitle("Ảnh chụp màn hình")
         .navigationBarTitleDisplayMode(.inline)
@@ -137,6 +150,7 @@ public struct ScreenshotsCleanView: View {
     }
     
     private func deleteScreenshots() {
+        HapticManager.shared.impact(.heavy)
         Task {
             isDeleting = true
             let idsToDelete = viewModel.screenshots.filter { $0.isSelectedForDeletion }.map { $0.id }
@@ -146,10 +160,12 @@ public struct ScreenshotsCleanView: View {
                     let set = Set(idsToDelete)
                     viewModel.screenshots.removeAll { set.contains($0.id) }
                     viewModel.refreshStorage()
+                    HapticManager.shared.notification(.success)
                     alertMessage = "Đã xóa thành công \(idsToDelete.count) ảnh chụp màn hình!"
                     showingAlert = true
                 }
             } catch {
+                HapticManager.shared.notification(.error)
                 alertMessage = "Lỗi khi xóa: \(error.localizedDescription)"
                 showingAlert = true
             }

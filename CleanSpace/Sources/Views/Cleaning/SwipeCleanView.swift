@@ -10,6 +10,7 @@ public struct SwipeCleanView: View {
     @State private var isDeleting = false
     @State private var showingFinishSheet = false
     @State private var isLoadingPhotos = false
+    @State private var hasTriggeredHaptic = false
     
     public init(viewModel: DashboardViewModel) {
         self.viewModel = viewModel
@@ -22,13 +23,12 @@ public struct SwipeCleanView: View {
     
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 // Header status
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Vuốt để dọn dẹp")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                         Text("Trái: Xóa • Phải: Giữ lại")
                             .font(.footnote)
                             .foregroundColor(.secondary)
@@ -38,79 +38,94 @@ public struct SwipeCleanView: View {
                     
                     if !viewModel.recentPhotos.isEmpty {
                         Text("\(min(currentIndex + 1, viewModel.recentPhotos.count)) / \(viewModel.recentPhotos.count)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(12)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color(.secondarySystemBackground)))
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
                 
-                // Card Swiper Area
+                // 3D Card Swiper Stack
                 ZStack {
                     if isLoadingPhotos {
                         VStack(spacing: 12) {
                             ProgressView()
-                            Text("Đang tải ảnh gần đây...")
+                            Text("Đang nạp ảnh gần đây...")
                                 .font(.footnote)
                                 .foregroundColor(.secondary)
                         }
                     } else if !viewModel.recentPhotos.isEmpty && currentIndex < viewModel.recentPhotos.count {
-                        // Background Card preview (Next photo)
+                        // Background Card 2 (3rd in stack)
+                        if currentIndex + 2 < viewModel.recentPhotos.count {
+                            ThumbnailView(asset: viewModel.recentPhotos[currentIndex + 2], targetSize: CGSize(width: 400, height: 500))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .cornerRadius(24)
+                                .scaleEffect(0.88)
+                                .offset(y: 24)
+                                .opacity(0.4)
+                                .padding(.horizontal, 28)
+                        }
+                        
+                        // Background Card 1 (2nd in stack)
                         if currentIndex + 1 < viewModel.recentPhotos.count {
-                            ThumbnailView(asset: viewModel.recentPhotos[currentIndex + 1], targetSize: CGSize(width: 400, height: 500))
+                            ThumbnailView(asset: viewModel.recentPhotos[currentIndex + 1], targetSize: CGSize(width: 500, height: 600))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .cornerRadius(24)
                                 .scaleEffect(0.94)
-                                .opacity(0.6)
+                                .offset(y: 12)
+                                .opacity(0.75)
                                 .padding(.horizontal, 20)
                         }
                         
                         // Active Top Card
                         if let asset = currentAsset {
                             ZStack(alignment: .top) {
-                                ThumbnailView(asset: asset, targetSize: CGSize(width: 600, height: 750))
+                                ThumbnailView(asset: asset, targetSize: CGSize(width: 700, height: 850))
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .cornerRadius(24)
                                     .clipped()
-                                    .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 6)
+                                    .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 8)
                                 
+                                // Stamp Overlays
                                 HStack {
                                     Text("XÓA")
-                                        .font(.headline)
-                                        .fontWeight(.heavy)
+                                        .font(.system(size: 26, weight: .black, design: .rounded))
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
-                                        .background(Color.red.opacity(0.85))
+                                        .background(Color.red.opacity(0.9))
                                         .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                        .rotationEffect(.degrees(15))
-                                        .opacity(Double(-offset.width / 100))
+                                        .cornerRadius(10)
+                                        .rotationEffect(.degrees(16))
+                                        .opacity(min(Double(-offset.width / 90), 1.0))
                                     
                                     Spacer()
                                     
                                     Text("GIỮ")
-                                        .font(.headline)
-                                        .fontWeight(.heavy)
+                                        .font(.system(size: 26, weight: .black, design: .rounded))
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 8)
-                                        .background(Color.green.opacity(0.85))
+                                        .background(Color.green.opacity(0.9))
                                         .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                        .rotationEffect(.degrees(-15))
-                                        .opacity(Double(offset.width / 100))
+                                        .cornerRadius(10)
+                                        .rotationEffect(.degrees(-16))
+                                        .opacity(min(Double(offset.width / 90), 1.0))
                                 }
                                 .padding(24)
                             }
                             .padding(.horizontal, 16)
-                            .offset(x: offset.width, y: offset.height * 0.4)
-                            .rotationEffect(.degrees(Double(offset.width / 20)))
+                            .offset(x: offset.width, y: offset.height * 0.35)
+                            .rotationEffect(.degrees(Double(offset.width / 16)))
                             .gesture(
                                 DragGesture()
                                     .onChanged { gesture in
                                         offset = gesture.translation
+                                        if abs(offset.width) > 120 && !hasTriggeredHaptic {
+                                            hasTriggeredHaptic = true
+                                            HapticManager.shared.impact(.light)
+                                        } else if abs(offset.width) <= 120 {
+                                            hasTriggeredHaptic = false
+                                        }
                                     }
                                     .onEnded { gesture in
                                         handleSwipeEnd(translation: gesture.translation)
@@ -118,29 +133,36 @@ public struct SwipeCleanView: View {
                             )
                         }
                     } else if !viewModel.recentPhotos.isEmpty && currentIndex >= viewModel.recentPhotos.count {
-                        // All swiped
+                        // Completed View
                         VStack(spacing: 20) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 64))
-                                .foregroundColor(.yellow)
+                            ZStack {
+                                Circle()
+                                    .fill(Color.yellow.opacity(0.16))
+                                    .frame(width: 90, height: 90)
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 46))
+                                    .foregroundColor(.yellow)
+                            }
+                            
                             Text("Đã duyệt xong tất cả ảnh!")
-                                .font(.title3)
-                                .fontWeight(.bold)
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
                             Text("Bạn đã chọn \(trashedAssets.count) ảnh để xóa.")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             
                             if !trashedAssets.isEmpty {
                                 Button {
+                                    HapticManager.shared.impact(.medium)
                                     showingFinishSheet = true
                                 } label: {
                                     Text("Xem và dọn dẹp (\(trashedAssets.count) ảnh)")
-                                        .fontWeight(.semibold)
-                                        .padding(.horizontal, 24)
-                                        .padding(.vertical, 14)
+                                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                                        .padding(.horizontal, 28)
+                                        .padding(.vertical, 15)
                                         .background(Color.red)
                                         .foregroundColor(.white)
-                                        .cornerRadius(14)
+                                        .cornerRadius(16)
+                                        .shadow(color: Color.red.opacity(0.3), radius: 8, y: 4)
                                 }
                             }
                         }
@@ -167,43 +189,52 @@ public struct SwipeCleanView: View {
                 }
                 .frame(maxHeight: 520)
                 
-                // Bottom Control Buttons
-                HStack(spacing: 36) {
+                // Bottom Floating Control Buttons
+                HStack(spacing: 32) {
+                    // Undo
                     Button {
                         undoLastSwipe()
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
-                            .font(.title2)
-                            .frame(width: 54, height: 54)
+                            .font(.system(size: 20, weight: .bold))
+                            .frame(width: 56, height: 56)
                             .background(Color(.secondarySystemBackground))
                             .foregroundColor(.orange)
                             .clipShape(Circle())
+                            .shadow(color: Color.black.opacity(0.06), radius: 6, y: 3)
                     }
                     .disabled(currentIndex == 0)
+                    .opacity(currentIndex == 0 ? 0.4 : 1.0)
                     
+                    // Discard / Trash button
                     Button {
                         simulateSwipe(direction: -1)
                     } label: {
                         Image(systemName: "trash.fill")
-                            .font(.title)
-                            .frame(width: 68, height: 68)
-                            .background(Color.red.opacity(0.15))
+                            .font(.system(size: 26, weight: .bold))
+                            .frame(width: 72, height: 72)
+                            .background(Color.red.opacity(0.14))
                             .foregroundColor(.red)
                             .clipShape(Circle())
+                            .shadow(color: Color.red.opacity(0.2), radius: 10, y: 5)
                     }
                     .disabled(viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count)
+                    .opacity((viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count) ? 0.4 : 1.0)
                     
+                    // Keep button
                     Button {
                         simulateSwipe(direction: 1)
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.title)
-                            .frame(width: 68, height: 68)
-                            .background(Color.green.opacity(0.15))
+                            .font(.system(size: 26, weight: .bold))
+                            .frame(width: 72, height: 72)
+                            .background(Color.green.opacity(0.14))
                             .foregroundColor(.green)
                             .clipShape(Circle())
+                            .shadow(color: Color.green.opacity(0.2), radius: 10, y: 5)
                     }
                     .disabled(viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count)
+                    .opacity((viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count) ? 0.4 : 1.0)
                 }
                 .padding(.bottom, 12)
             }
@@ -232,25 +263,38 @@ public struct SwipeCleanView: View {
     
     private func handleSwipeEnd(translation: CGSize) {
         if translation.width > 120 {
+            HapticManager.shared.impact(.medium)
             if let asset = currentAsset {
                 keptAssets.append(asset)
             }
-            nextCard()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                offset = CGSize(width: 500, height: translation.height)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                nextCard()
+            }
         } else if translation.width < -120 {
+            HapticManager.shared.impact(.heavy)
             if let asset = currentAsset {
                 trashedAssets.append(asset)
             }
-            nextCard()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                offset = CGSize(width: -500, height: translation.height)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                nextCard()
+            }
         } else {
-            withAnimation(.spring()) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 offset = .zero
             }
         }
     }
     
     private func simulateSwipe(direction: CGFloat) {
+        HapticManager.shared.impact(direction > 0 ? .medium : .heavy)
         withAnimation(.easeOut(duration: 0.25)) {
-            offset = CGSize(width: direction * 400, height: 0)
+            offset = CGSize(width: direction * 450, height: 0)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             if direction > 0, let asset = currentAsset {
@@ -264,11 +308,13 @@ public struct SwipeCleanView: View {
     
     private func nextCard() {
         offset = .zero
+        hasTriggeredHaptic = false
         currentIndex += 1
     }
     
     private func undoLastSwipe() {
         guard currentIndex > 0 else { return }
+        HapticManager.shared.impact(.medium)
         currentIndex -= 1
         if let lastAsset = viewModel.recentPhotos[safe: currentIndex] {
             trashedAssets.removeAll { $0.localIdentifier == lastAsset.localIdentifier }
@@ -277,6 +323,7 @@ public struct SwipeCleanView: View {
     }
     
     private func deleteTrashedAssets() {
+        HapticManager.shared.impact(.heavy)
         Task {
             isDeleting = true
             let ids = trashedAssets.map { $0.localIdentifier }
@@ -284,6 +331,7 @@ public struct SwipeCleanView: View {
             trashedAssets.removeAll()
             showingFinishSheet = false
             isDeleting = false
+            HapticManager.shared.notification(.success)
             viewModel.refreshStorage()
         }
     }
@@ -297,23 +345,32 @@ struct SwipeFinishSummarySheet: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Text("Xác nhận xóa")
-                    .font(.headline)
-                    .padding(.top)
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.12))
+                        .frame(width: 80, height: 80)
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 38))
+                        .foregroundColor(.red)
+                }
+                .padding(.top, 24)
                 
-                Text("Bạn đã chọn \(trashedAssets.count) bức ảnh để xóa khỏi thư viện.")
+                Text("Xác nhận dọn dẹp")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                
+                Text("Bạn đã đánh dấu \(trashedAssets.count) bức ảnh để dọn dẹp. Các ảnh này sẽ được xóa khỏi Thư viện ảnh của iPhone.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 24)
                 
                 Spacer()
                 
                 Button {
                     onConfirmDelete()
                 } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         if isDeleting {
                             ProgressView().tint(.white)
                         } else {
@@ -321,14 +378,16 @@ struct SwipeFinishSummarySheet: View {
                             Text("Xóa vĩnh viễn \(trashedAssets.count) ảnh")
                         }
                     }
-                    .fontWeight(.bold)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(Color.red)
                     .foregroundColor(.white)
-                    .cornerRadius(14)
+                    .cornerRadius(16)
+                    .shadow(color: Color.red.opacity(0.3), radius: 8, y: 4)
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
                 .disabled(isDeleting)
             }
             .navigationBarItems(trailing: Button("Đóng") { dismiss() })

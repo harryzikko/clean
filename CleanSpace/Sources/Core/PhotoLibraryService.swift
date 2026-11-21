@@ -6,8 +6,12 @@ public final class PhotoLibraryService: @unchecked Sendable {
     public static let shared = PhotoLibraryService()
     
     private let imageManager = PHCachingImageManager()
+    private let thumbnailCache = NSCache<NSString, UIImage>()
     
-    private init() {}
+    private init() {
+        thumbnailCache.countLimit = 500 // Cache up to 500 thumbnails in RAM
+        thumbnailCache.totalCostLimit = 100 * 1024 * 1024 // 100 MB max RAM cache
+    }
     
     // MARK: - Authorization
     
@@ -72,19 +76,15 @@ public final class PhotoLibraryService: @unchecked Sendable {
         return assets
     }
     
-    // MARK: - Crash-Proof File Size Calculation
+    // MARK: - Safe File Size Calculation
     
     public func getAssetSize(for asset: PHAsset) async -> Int64 {
-        // Safe calculation: avoids private KVC calls like resource.value(forKey: "fileSize")
-        // which throw uncaught NSUnknownKeyException and crash the app on iOS.
         if asset.mediaType == .video {
-            // Standard iPhone 1080p/4K video bitrate approximation
             let duration = max(1.0, asset.duration)
             let is4K = asset.pixelWidth >= 3840 || asset.pixelHeight >= 2160
-            let bytesPerSecond: Double = is4K ? 6_000_000 : 2_200_000
+            let bytesPerSecond: Double = is4K ? 5_500_000 : 2_200_000
             return Int64(duration * bytesPerSecond)
         } else {
-            // Image approximation based on pixel count & compression
             let pixels = max(1, asset.pixelWidth * asset.pixelHeight)
             let isScreenshot = asset.mediaSubtypes.contains(.photoScreenshot)
             let ratio: Double = isScreenshot ? 0.35 : 0.45
@@ -92,13 +92,22 @@ public final class PhotoLibraryService: @unchecked Sendable {
         }
     }
     
-    // MARK: - Thumbnail Loading (Crash-Proof Continuation)
+    // MARK: - Cached High-Performance Thumbnail Loading
+    
+    public func getCachedThumbnail(for assetId: String) -> UIImage? {
+        thumbnailCache.object(forKey: assetId as NSString)
+    }
     
     public func requestThumbnail(
         for asset: PHAsset,
-        targetSize: CGSize = CGSize(width: 200, height: 200)
+        targetSize: CGSize = CGSize(width: 250, height: 250)
     ) async -> UIImage? {
-        await withCheckedContinuation { continuation in
+        let key = "\(asset.localIdentifier)_\(Int(targetSize.width))" as NSString
+        if let cached = thumbnailCache.object(forKey: key) {
+            return cached
+        }
+        
+        return await withCheckedContinuation { continuation in
             let lock = NSLock()
             var hasResumed = false
             
@@ -112,11 +121,14 @@ public final class PhotoLibraryService: @unchecked Sendable {
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
+            ) { [weak self] image, _ in
                 lock.lock()
                 defer { lock.unlock() }
                 if !hasResumed {
                     hasResumed = true
+                    if let img = image {
+                        self?.thumbnailCache.setObject(img, forKey: key)
+                    }
                     continuation.resume(returning: image)
                 }
             }
@@ -130,6 +142,11 @@ public final class PhotoLibraryService: @unchecked Sendable {
         
         let assetsToDelete = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
         guard assetsToDelete.count > 0 else { return true }
+        
+        // Invalidate cache for deleted items
+        for id in ids {
+            thumbnailCache.removeObject(forKey: id as NSString)
+        }
         
         return try await withCheckedThrowingContinuation { continuation in
             let lock = NSLock()

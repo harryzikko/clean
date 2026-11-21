@@ -15,36 +15,44 @@ public struct SimilarPhotosView: View {
         VStack(spacing: 0) {
             if viewModel.duplicateGroups.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 64))
-                        .foregroundColor(.green)
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.12))
+                            .frame(width: 90, height: 90)
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 48))
+                            .foregroundColor(.green)
+                    }
                     Text("Không có ảnh trùng lặp nào!")
-                        .font(.headline)
-                    Text("Thư viện ảnh của bạn rất gọn gàng.")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    Text("Thư viện ảnh của bạn rất gọn gàng và ngăn nắp.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 24) {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 18) {
                         ForEach($viewModel.duplicateGroups) { $group in
                             DuplicateGroupCard(group: $group)
                         }
                     }
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                    .padding(.bottom, 100)
                 }
                 
-                // Bottom Action Bar
-                VStack(spacing: 8) {
+                // Floating Bottom Action Bar
+                VStack(spacing: 0) {
                     Divider()
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Giải phóng:")
+                            Text("Dung lượng giải phóng")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Text(viewModel.formattedCleanableSize)
-                                .font(.headline)
+                                .font(.system(size: 18, weight: .heavy, design: .rounded))
                                 .foregroundColor(.blue)
                         }
                         
@@ -53,31 +61,30 @@ public struct SimilarPhotosView: View {
                         Button {
                             performClean()
                         } label: {
-                            HStack {
+                            HStack(spacing: 6) {
                                 if isDeleting {
-                                    ProgressView()
-                                        .tint(.white)
+                                    ProgressView().tint(.white)
                                 } else {
                                     Image(systemName: "trash.fill")
-                                    Text("Dọn dẹp ảnh đã chọn")
+                                    Text("Dọn ảnh đã chọn")
                                 }
                             }
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 24)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 22)
                             .padding(.vertical, 14)
-                            .background(Color.blue)
+                            .background(viewModel.totalCleanableBytes > 0 ? Color.blue : Color.gray.opacity(0.4))
                             .foregroundColor(.white)
                             .cornerRadius(14)
                         }
                         .disabled(isDeleting || viewModel.totalCleanableBytes == 0)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
                 }
-                .background(.ultraThinMaterial)
             }
         }
-        .navigationTitle("Ảnh tương đồng & Trùng lặp")
+        .navigationTitle("Ảnh tương đồng & Trùng")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Thông báo", isPresented: $showingAlert) {
             Button("OK") {}
@@ -87,15 +94,18 @@ public struct SimilarPhotosView: View {
     }
     
     private func performClean() {
+        HapticManager.shared.impact(.heavy)
         Task {
             isDeleting = true
             do {
                 let saved = try await viewModel.cleanSelectedItems()
                 let formatted = ByteCountFormatter.string(fromByteCount: saved, countStyle: .file)
                 alertMessage = "Đã giải phóng thành công \(formatted) bộ nhớ!"
+                HapticManager.shared.notification(.success)
                 showingAlert = true
             } catch {
                 alertMessage = "Không thể xóa: \(error.localizedDescription)"
+                HapticManager.shared.notification(.error)
                 showingAlert = true
             }
             isDeleting = false
@@ -109,16 +119,24 @@ struct DuplicateGroupCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("\(group.items.count) ảnh tương đồng")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    Text("\(group.items.count) ảnh liên tiếp")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                }
                 
                 Spacer()
                 
-                Text("Tiết kiệm: \(group.formattedSavings)")
+                Text("Tiết kiệm ~\(group.formattedSavings)")
                     .font(.caption)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.green.opacity(0.14)))
                     .foregroundColor(.green)
-                    .fontWeight(.medium)
             }
             
             ScrollView(.horizontal, showsIndicators: false) {
@@ -128,19 +146,25 @@ struct DuplicateGroupCard: View {
                         
                         VStack(spacing: 6) {
                             ZStack(alignment: .topTrailing) {
-                                ThumbnailView(asset: item.asset, targetSize: CGSize(width: 140, height: 140))
-                                    .frame(width: 120, height: 120)
+                                ThumbnailView(asset: item.asset, targetSize: CGSize(width: 160, height: 160))
+                                    .frame(width: 110, height: 110)
                                     .cornerRadius(12)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(isBest ? Color.green : (item.isSelectedForDeletion ? Color.red : Color.clear), lineWidth: 2.5)
+                                            .stroke(isBest ? Color.green : (item.isSelectedForDeletion ? Color.red : Color.clear), lineWidth: 2)
                                     )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if !isBest {
+                                            HapticManager.shared.selection()
+                                            item.isSelectedForDeletion.toggle()
+                                        }
+                                    }
                                 
-                                // Tag or Checkmark
                                 if isBest {
-                                    HStack(spacing: 2) {
-                                        Image(systemName: "star.fill")
-                                            .font(.caption2)
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "crown.fill")
+                                            .font(.system(size: 9))
                                         Text("Đẹp nhất")
                                             .font(.system(size: 10, weight: .bold))
                                     }
@@ -149,30 +173,38 @@ struct DuplicateGroupCard: View {
                                     .background(Color.green)
                                     .foregroundColor(.white)
                                     .cornerRadius(6)
-                                    .padding(6)
+                                    .padding(5)
                                 } else {
                                     Button {
+                                        HapticManager.shared.selection()
                                         item.isSelectedForDeletion.toggle()
                                     } label: {
                                         Image(systemName: item.isSelectedForDeletion ? "checkmark.circle.fill" : "circle")
-                                            .font(.title3)
+                                            .font(.system(size: 20))
                                             .foregroundColor(item.isSelectedForDeletion ? .red : .white)
-                                            .background(Circle().fill(Color.black.opacity(0.3)))
+                                            .background(Circle().fill(Color.black.opacity(0.35)))
                                     }
-                                    .padding(6)
+                                    .padding(5)
                                 }
                             }
                             
                             Text(item.formattedSize)
                                 .font(.caption2)
+                                .fontWeight(.medium)
                                 .foregroundColor(.secondary)
                         }
                     }
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.primary.opacity(0.04), lineWidth: 1)
+                )
+        )
     }
 }
