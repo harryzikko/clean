@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DuplicateGroup: Identifiable, Sendable {
+public struct DuplicateGroup: Identifiable, @unchecked Sendable {
     public let id: String
     public var items: [MediaItem]
     public var bestItemId: String

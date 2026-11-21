@@ -2,7 +2,7 @@ import Foundation
 import Photos
 import UIKit
 
-public struct MediaItem: Identifiable, Hashable, Sendable {
+public struct MediaItem: Identifiable, Hashable, @unchecked Sendable {
     public let id: String
     public let asset: PHAsset?
     public let creationDate: Date?
