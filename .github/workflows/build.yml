@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     name: Build Unsigned IPA
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Code
@@ -21,6 +21,9 @@ jobs:
 
       - name: Generate Xcode Project
         run: xcodegen generate
+
+      - name: Show Xcode Version
+        run: xcodebuild -version
 
       - name: Build for iOS Device (Unsigned)
         run: |
