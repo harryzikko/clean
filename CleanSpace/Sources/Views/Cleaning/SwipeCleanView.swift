@@ -9,6 +9,7 @@ public struct SwipeCleanView: View {
     @State private var keptAssets: [PHAsset] = []
     @State private var isDeleting = false
     @State private var showingFinishSheet = false
+    @State private var isLoadingPhotos = false
     
     public init(viewModel: DashboardViewModel) {
         self.viewModel = viewModel
@@ -35,19 +36,28 @@ public struct SwipeCleanView: View {
                     
                     Spacer()
                     
-                    Text("\(min(currentIndex + 1, viewModel.recentPhotos.count)) / \(viewModel.recentPhotos.count)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
+                    if !viewModel.recentPhotos.isEmpty {
+                        Text("\(min(currentIndex + 1, viewModel.recentPhotos.count)) / \(viewModel.recentPhotos.count)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(12)
+                    }
                 }
                 .padding(.horizontal)
                 
                 // Card Swiper Area
                 ZStack {
-                    if currentIndex < viewModel.recentPhotos.count {
+                    if isLoadingPhotos {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Đang tải ảnh gần đây...")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if !viewModel.recentPhotos.isEmpty && currentIndex < viewModel.recentPhotos.count {
                         // Background Card preview (Next photo)
                         if currentIndex + 1 < viewModel.recentPhotos.count {
                             ThumbnailView(asset: viewModel.recentPhotos[currentIndex + 1], targetSize: CGSize(width: 400, height: 500))
@@ -67,7 +77,6 @@ public struct SwipeCleanView: View {
                                     .clipped()
                                     .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 6)
                                 
-                                // Swipe indicator overlays
                                 HStack {
                                     Text("XÓA")
                                         .font(.headline)
@@ -108,7 +117,7 @@ public struct SwipeCleanView: View {
                                     }
                             )
                         }
-                    } else {
+                    } else if !viewModel.recentPhotos.isEmpty && currentIndex >= viewModel.recentPhotos.count {
                         // All swiped
                         VStack(spacing: 20) {
                             Image(systemName: "sparkles")
@@ -135,13 +144,31 @@ public struct SwipeCleanView: View {
                                 }
                             }
                         }
+                    } else {
+                        // Empty library
+                        VStack(spacing: 16) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 54))
+                                .foregroundColor(.secondary)
+                            Text("Không có ảnh để duyệt")
+                                .font(.headline)
+                            Text("Hãy cấp quyền thư viện ảnh hoặc tải thêm ảnh vào thiết bị.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                            
+                            Button("Tải lại ảnh") {
+                                reloadPhotos()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
                     }
                 }
                 .frame(maxHeight: 520)
                 
                 // Bottom Control Buttons
                 HStack(spacing: 36) {
-                    // Undo button
                     Button {
                         undoLastSwipe()
                     } label: {
@@ -154,7 +181,6 @@ public struct SwipeCleanView: View {
                     }
                     .disabled(currentIndex == 0)
                     
-                    // Discard / Trash button (Swipe Left)
                     Button {
                         simulateSwipe(direction: -1)
                     } label: {
@@ -165,9 +191,8 @@ public struct SwipeCleanView: View {
                             .foregroundColor(.red)
                             .clipShape(Circle())
                     }
-                    .disabled(currentIndex >= viewModel.recentPhotos.count)
+                    .disabled(viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count)
                     
-                    // Keep button (Swipe Right)
                     Button {
                         simulateSwipe(direction: 1)
                     } label: {
@@ -178,9 +203,14 @@ public struct SwipeCleanView: View {
                             .foregroundColor(.green)
                             .clipShape(Circle())
                     }
-                    .disabled(currentIndex >= viewModel.recentPhotos.count)
+                    .disabled(viewModel.recentPhotos.isEmpty || currentIndex >= viewModel.recentPhotos.count)
                 }
                 .padding(.bottom, 12)
+            }
+            .task {
+                if viewModel.recentPhotos.isEmpty {
+                    reloadPhotos()
+                }
             }
             .sheet(isPresented: $showingFinishSheet) {
                 SwipeFinishSummarySheet(trashedAssets: $trashedAssets, isDeleting: $isDeleting) {
@@ -190,21 +220,28 @@ public struct SwipeCleanView: View {
         }
     }
     
+    private func reloadPhotos() {
+        isLoadingPhotos = true
+        let photos = PhotoLibraryService.shared.fetchAllPhotos()
+        viewModel.recentPhotos = Array(photos.prefix(100))
+        currentIndex = 0
+        trashedAssets.removeAll()
+        keptAssets.removeAll()
+        isLoadingPhotos = false
+    }
+    
     private func handleSwipeEnd(translation: CGSize) {
         if translation.width > 120 {
-            // Swiped Right -> Keep
             if let asset = currentAsset {
                 keptAssets.append(asset)
             }
             nextCard()
         } else if translation.width < -120 {
-            // Swiped Left -> Trash
             if let asset = currentAsset {
                 trashedAssets.append(asset)
             }
             nextCard()
         } else {
-            // Return to center
             withAnimation(.spring()) {
                 offset = .zero
             }

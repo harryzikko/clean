@@ -1,5 +1,5 @@
 import Foundation
-import LocalAuthentication
+import Photos
 import UIKit
 
 public struct VaultItem: Identifiable, Sendable {
@@ -28,27 +28,6 @@ public final class VaultService: @unchecked Sendable {
     }
     
     private init() {}
-    
-    // MARK: - Biometric Authentication
-    
-    public func authenticateWithBiometrics(reason: String = "Mở khóa kho ảnh bảo mật") async -> (success: Bool, error: String?) {
-        let context = LAContext()
-        var error: NSError?
-        
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            return (false, error?.localizedDescription ?? "Thiết bị không hỗ trợ Face ID / Mã khóa")
-        }
-        
-        return await withCheckedContinuation { continuation in
-            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, evalError in
-                if success {
-                    continuation.resume(returning: (true, nil))
-                } else {
-                    continuation.resume(returning: (false, evalError?.localizedDescription))
-                }
-            }
-        }
-    }
     
     // MARK: - Vault Operations
     
@@ -86,7 +65,7 @@ public final class VaultService: @unchecked Sendable {
             let isVideo = url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov"
             
             return VaultItem(id: id, fileName: url.lastPathComponent, dateAdded: date, fileSize: size, isVideo: isVideo)
-        }
+        }.sorted { $0.dateAdded > $1.dateAdded }
     }
     
     public func loadVaultImage(fileName: String) -> UIImage? {
@@ -98,5 +77,31 @@ public final class VaultService: @unchecked Sendable {
     public func deleteVaultItem(fileName: String) {
         let fileURL = vaultDirectory.appendingPathComponent(fileName)
         try? fileManager.removeItem(at: fileURL)
+    }
+    
+    public func exportItemToPhotosLibrary(fileName: String) async throws {
+        guard let image = loadVaultImage(fileName: fileName) else {
+            throw NSError(domain: "CleanSpace.Vault", code: -2, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy ảnh để xuất"])
+        }
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let lock = NSLock()
+            var hasResumed = false
+            
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }, completionHandler: { success, error in
+                lock.lock()
+                defer { lock.unlock() }
+                if !hasResumed {
+                    hasResumed = true
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: ())
+                    }
+                }
+            })
+        }
     }
 }

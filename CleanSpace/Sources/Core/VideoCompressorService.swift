@@ -20,9 +20,9 @@ public enum CompressionQuality: String, CaseIterable, Identifiable, Sendable {
     
     public var estimatedReductionPercentage: Double {
         switch self {
-        case .high: return 0.40 // 40% reduction
-        case .medium: return 0.65 // 65% reduction
-        case .low: return 0.85 // 85% reduction
+        case .high: return 0.40
+        case .medium: return 0.65
+        case .low: return 0.85
         }
     }
 }
@@ -68,7 +68,6 @@ public final class VideoCompressorService: @unchecked Sendable {
         exportSession.outputFileType = .mp4
         exportSession.shouldOptimizeForNetworkUse = true
         
-        // Progress polling timer
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
         timer.schedule(deadline: .now(), repeating: .milliseconds(200))
         timer.setEventHandler {
@@ -77,8 +76,17 @@ public final class VideoCompressorService: @unchecked Sendable {
         timer.resume()
         
         return try await withCheckedThrowingContinuation { continuation in
+            let lock = NSLock()
+            var hasResumed = false
+            
             exportSession.exportAsynchronously {
                 timer.cancel()
+                lock.lock()
+                defer { lock.unlock() }
+                
+                guard !hasResumed else { return }
+                hasResumed = true
+                
                 switch exportSession.status {
                 case .completed:
                     let attributes = try? FileManager.default.attributesOfItem(atPath: outputURL.path)
@@ -98,7 +106,7 @@ public final class VideoCompressorService: @unchecked Sendable {
                 case .cancelled:
                     continuation.resume(throwing: NSError(domain: "CleanSpace.VideoCompressor", code: -3, userInfo: [NSLocalizedDescriptionKey: "Đã hủy nén"]))
                 default:
-                    break
+                    continuation.resume(throwing: NSError(domain: "CleanSpace.VideoCompressor", code: -4, userInfo: [NSLocalizedDescriptionKey: "Lỗi không xác định khi xuất video"]))
                 }
             }
         }
@@ -106,6 +114,9 @@ public final class VideoCompressorService: @unchecked Sendable {
     
     public func saveCompressedVideoToLibrary(url: URL, deleteOriginalAssetId: String?) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let lock = NSLock()
+            var hasResumed = false
+            
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
                 request?.creationDate = Date()
@@ -117,10 +128,15 @@ public final class VideoCompressorService: @unchecked Sendable {
                     }
                 }
             }, completionHandler: { success, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
+                lock.lock()
+                defer { lock.unlock() }
+                if !hasResumed {
+                    hasResumed = true
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: ())
+                    }
                 }
             })
         }
@@ -128,11 +144,20 @@ public final class VideoCompressorService: @unchecked Sendable {
     
     private func fetchAVAsset(for asset: PHAsset) async throws -> AVAsset {
         try await withCheckedThrowingContinuation { continuation in
+            let lock = NSLock()
+            var hasResumed = false
+            
             let options = PHVideoRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
             
             PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
+                lock.lock()
+                defer { lock.unlock() }
+                
+                guard !hasResumed else { return }
+                hasResumed = true
+                
                 if let error = info?[PHImageErrorKey] as? Error {
                     continuation.resume(throwing: error)
                 } else if let avAsset = avAsset {

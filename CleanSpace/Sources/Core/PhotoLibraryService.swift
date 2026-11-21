@@ -17,8 +17,12 @@ public final class PhotoLibraryService: @unchecked Sendable {
     
     public func requestAuthorization() async -> PHAuthorizationStatus {
         await withCheckedContinuation { continuation in
+            var hasResumed = false
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
-                continuation.resume(returning: status)
+                if !hasResumed {
+                    hasResumed = true
+                    continuation.resume(returning: status)
+                }
             }
         }
     }
@@ -26,6 +30,7 @@ public final class PhotoLibraryService: @unchecked Sendable {
     // MARK: - Asset Fetching
     
     public func fetchAllPhotos() -> [PHAsset] {
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return [] }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
@@ -38,6 +43,7 @@ public final class PhotoLibraryService: @unchecked Sendable {
     }
     
     public func fetchScreenshots() -> [PHAsset] {
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return [] }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(
@@ -54,6 +60,7 @@ public final class PhotoLibraryService: @unchecked Sendable {
     }
     
     public func fetchVideos() -> [PHAsset] {
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return [] }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "duration", ascending: false)]
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
@@ -65,40 +72,38 @@ public final class PhotoLibraryService: @unchecked Sendable {
         return assets
     }
     
-    // MARK: - File Size Estimation & Exact Size
+    // MARK: - Crash-Proof File Size Calculation
     
     public func getAssetSize(for asset: PHAsset) async -> Int64 {
-        let resources = PHAssetResource.assetResources(for: asset)
-        var totalSize: Int64 = 0
-        for resource in resources {
-            if let unsignedSize = resource.value(forKey: "fileSize") as? UInt64 {
-                totalSize += Int64(unsignedSize)
-            }
+        // Safe calculation: avoids private KVC calls like resource.value(forKey: "fileSize")
+        // which throw uncaught NSUnknownKeyException and crash the app on iOS.
+        if asset.mediaType == .video {
+            // Standard iPhone 1080p/4K video bitrate approximation
+            let duration = max(1.0, asset.duration)
+            let is4K = asset.pixelWidth >= 3840 || asset.pixelHeight >= 2160
+            let bytesPerSecond: Double = is4K ? 6_000_000 : 2_200_000
+            return Int64(duration * bytesPerSecond)
+        } else {
+            // Image approximation based on pixel count & compression
+            let pixels = max(1, asset.pixelWidth * asset.pixelHeight)
+            let isScreenshot = asset.mediaSubtypes.contains(.photoScreenshot)
+            let ratio: Double = isScreenshot ? 0.35 : 0.45
+            return max(350_000, Int64(Double(pixels) * ratio))
         }
-        
-        // Fallback estimate if resource size is zero
-        if totalSize == 0 {
-            if asset.mediaType == .video {
-                // Approximate 2MB per second for 1080p video
-                totalSize = max(1_000_000, Int64(asset.duration * 2_500_000))
-            } else {
-                // Approximate image size from pixel dimensions
-                let pixels = asset.pixelWidth * asset.pixelHeight
-                totalSize = max(500_000, Int64(Double(pixels) * 0.4))
-            }
-        }
-        return totalSize
     }
     
-    // MARK: - Thumbnail Loading
+    // MARK: - Thumbnail Loading (Crash-Proof Continuation)
     
     public func requestThumbnail(
         for asset: PHAsset,
         targetSize: CGSize = CGSize(width: 200, height: 200)
     ) async -> UIImage? {
         await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var hasResumed = false
+            
             let options = PHImageRequestOptions()
-            options.deliveryMode = .opportunistic
+            options.deliveryMode = .fastFormat
             options.resizeMode = .fast
             options.isNetworkAccessAllowed = true
             
@@ -107,9 +112,11 @@ public final class PhotoLibraryService: @unchecked Sendable {
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, info in
-                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                if !isDegraded || image != nil {
+            ) { image, _ in
+                lock.lock()
+                defer { lock.unlock() }
+                if !hasResumed {
+                    hasResumed = true
                     continuation.resume(returning: image)
                 }
             }
@@ -125,13 +132,21 @@ public final class PhotoLibraryService: @unchecked Sendable {
         guard assetsToDelete.count > 0 else { return true }
         
         return try await withCheckedThrowingContinuation { continuation in
+            let lock = NSLock()
+            var hasResumed = false
+            
             PHPhotoLibrary.shared().performChanges({
                 PHAssetChangeRequest.deleteAssets(assetsToDelete)
             }, completionHandler: { success, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: success)
+                lock.lock()
+                defer { lock.unlock() }
+                if !hasResumed {
+                    hasResumed = true
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: success)
+                    }
                 }
             })
         }
